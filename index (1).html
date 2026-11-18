@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Abbakids QR Scanner</title>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+:root{--green:#315b46;--red:#a82f35;--ink:#26312b;--muted:#68756d}
+*{box-sizing:border-box}body{margin:0;background:#f3f2ed;color:var(--ink);font-family:Arial,sans-serif}
+main{max-width:620px;margin:24px auto;padding:0 16px}
+.card{background:#fff;border-radius:18px;box-shadow:0 8px 28px #1f2d2315;overflow:hidden}
+header{background:linear-gradient(120deg,#244b3a,#37634a);color:#fff;padding:24px}
+.eyebrow{font-size:12px;letter-spacing:1.5px;color:#e8d4a7;text-transform:uppercase}
+h1{font-size:25px;margin:8px 0}.sub{font-size:13px;color:#e6eee8}
+.content{padding:22px}#reader{width:100%;max-width:480px;margin:14px auto}
+button{border:0;border-radius:10px;padding:13px 17px;font-size:14px;font-weight:bold;cursor:pointer}
+.primary{background:var(--green);color:white}.secondary{background:#edf1ed;color:var(--green)}
+.actions{display:flex;gap:9px;flex-wrap:wrap}.status{font-size:13px;color:var(--muted);line-height:1.5;margin:12px 0}
+.error{background:#fff1f0;color:#a82f35;padding:12px;border-radius:10px;font-size:13px;margin-top:12px}
+.success{background:#e8f3ea;color:#28623b;padding:12px;border-radius:10px;font-size:13px;margin-top:12px;overflow-wrap:anywhere}
+.note{font-size:12px;color:var(--muted);line-height:1.5;margin-top:18px}
+@media(max-width:520px){main{margin:10px auto}.content{padding:17px}header{padding:20px}}
+</style>
+</head>
+<body>
+<main><div class="card">
+<header><div class="eyebrow">Abbakids Christmas 2026</div><h1>QR Scanner Petugas</h1><div class="sub">Pindai QR keluarga untuk membuka halaman check-in.</div></header>
+<div class="content">
+<p class="status" id="status">Tekan tombol Mulai Scan, lalu izinkan akses kamera. Gunakan kamera belakang pada HP atau webcam pada laptop.</p>
+<div id="reader"></div>
+<div class="actions">
+<button class="primary" id="start" onclick="startScan()">Mulai Scan</button>
+<button class="secondary" onclick="stopScan()">Matikan Kamera</button>
+</div>
+<div id="feedback"></div>
+<p class="note">Scanner ini hanya membaca QR dan membuka tautan check-in Abbakids. Data peserta tetap berada di Google Sheets dan diproses oleh Google Apps Script.</p>
+</div></div></main>
+<script>
+let scanner=null, running=false, handling=false;
+const statusEl=document.getElementById('status');
+const feedback=document.getElementById('feedback');
+function showError(message){feedback.className='error';feedback.textContent=message}
+function showSuccess(message){feedback.className='success';feedback.textContent=message}
+async function startScan(){
+  feedback.className='';feedback.textContent='';
+  if(!window.Html5Qrcode){showError('Library scanner gagal dimuat. Periksa koneksi internet lalu refresh halaman.');return}
+  if(running)return;
+  try{
+    scanner=new Html5Qrcode('reader');
+    const cameras=await Html5Qrcode.getCameras();
+    if(!cameras||!cameras.length){showError('Kamera tidak ditemukan pada perangkat ini.');return}
+    const preferred=cameras.find(c=>/back|rear|environment/i.test(c.label))||cameras[cameras.length-1];
+    await scanner.start(preferred.id,{fps:10,qrbox:(w,h)=>({width:Math.min(260,w),height:Math.min(260,h)})},onDecoded,()=>{});
+    running=true;statusEl.textContent='Kamera aktif. Arahkan ke QR Code keluarga.';
+  }catch(e){
+    showError('Kamera gagal diaktifkan: '+(e.message||e)+' Pastikan halaman dibuka melalui HTTPS dan izin kamera diizinkan.');
+  }
+}
+async function stopScan(){
+  if(scanner&&running){try{await scanner.stop();await scanner.clear()}catch(e){}running=false}
+  statusEl.textContent='Kamera dimatikan.';
+}
+async function onDecoded(decoded){
+  if(handling)return;handling=true;
+  statusEl.textContent='QR terbaca. Memeriksa tautan check-in...';
+  await stopScan();
+  let target;
+  try{target=new URL(decoded)}catch(e){showError('QR terbaca, tetapi isinya bukan tautan yang valid.');handling=false;return}
+  if(target.protocol!=='https:'||target.hostname!=='script.google.com'||!target.pathname.includes('/macros/s/')){
+    showError('QR ini bukan tautan check-in Google Apps Script Abbakids.');handling=false;return;
+  }
+  if(target.searchParams.get('page')!=='checkin'||!target.searchParams.get('token')){
+    showError('Tautan QR belum memiliki parameter check-in yang benar.');handling=false;return;
+  }
+  showSuccess('QR valid. Membuka data keluarga...');
+  window.location.href=target.href;
+}
+</script>
+</body>
+</html>
